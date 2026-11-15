@@ -21,6 +21,13 @@ jobs:
       github.event.issue.user.login == github.repository_owner
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      ANTHROPIC_BASE_URL: https://openrouter.ai/api/v1
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_MODEL: anthropic/claude-sonnet-4.6
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE: ${{ github.event.issue.number || inputs.issue }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -28,25 +35,33 @@ jobs:
         with: { node-version: '22' }
       - run: npm i -g @anthropic-ai/claude-code
       - name: Run
-        env:
-          ANTHROPIC_BASE_URL: https://openrouter.ai/api/v1
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
-          ANTHROPIC_API_KEY: ""
-          ANTHROPIC_MODEL: anthropic/claude-sonnet-4.6
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE: ${{ github.event.issue.number || inputs.issue }}
         run: |
           set -euo pipefail
           gh issue comment "$ISSUE" --body "Agent started."
           BODY=$(gh issue view "$ISSUE" --json title,body -q '.title + "\n\n" + .body')
           BRANCH="agent/issue-$ISSUE"
           git checkout -b "$BRANCH"
+
+          set +e
           echo "$BODY" | claude -p --max-turns 40 \
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(npm:*),Bash(npx:*)" || true
+            --permission-mode dontAsk \
+            --allowedTools "Read" "Write" "Edit" "Glob" "Grep" \
+              "Bash(git:*)" "Bash(npm:*)" "Bash(npx:*)" \
+            > /tmp/claude.log 2>&1
+          CODE=$?
+          set -e
+          echo "claude exit: $CODE"
+          tail -n 30 /tmp/claude.log
+
           if git diff --quiet && git diff --cached --quiet; then
-            gh issue comment "$ISSUE" --body "No changes produced. Check the Actions log."
+            gh issue comment "$ISSUE" --body "No changes produced (exit $CODE). Log tail:
+
+          \`\`\`
+          $(tail -n 15 /tmp/claude.log)
+          \`\`\`"
             exit 0
           fi
+
           git config user.name "unclaimed-agent"
           git config user.email "agent@users.noreply.github.com"
           git add -A && git commit -m "feat: resolve #$ISSUE"

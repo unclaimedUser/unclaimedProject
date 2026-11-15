@@ -35,16 +35,18 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - run: npm i -g @anthropic-ai/claude-code
+
       - name: Run
         run: |
           set -euo pipefail
           gh issue comment "$ISSUE" --body "Agent started."
           BODY=$(gh issue view "$ISSUE" --json title,body -q '.title + "\n\n" + .body')
           BRANCH="agent/issue-$ISSUE"
-          git checkout -b "$BRANCH"
 
           git config user.name "unclaimed-agent"
           git config user.email "agent@users.noreply.github.com"
+          # -B, not -b: a re-run must reset the branch instead of failing on it.
+          git checkout -B "$BRANCH"
 
           set +e
           echo "$BODY" | claude -p --max-turns 40 \
@@ -57,8 +59,8 @@ jobs:
           echo "claude exit: $CODE"
           tail -n 30 /tmp/claude.log
 
-          # Stage everything first: git diff ignores untracked files, so a
-          # newly created file looks like "no changes" until it is staged.
+          # Stage first: git diff ignores untracked files, so a new file looks
+          # like "no changes" until it is staged.
           git add -A
 
           if git diff --cached --quiet; then
@@ -71,9 +73,24 @@ jobs:
           fi
 
           git commit -m "feat: resolve #$ISSUE"
-          git push origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
-            --title "$(gh issue view "$ISSUE" --json title -q .title)" \
-            --body "Closes #$ISSUE. Autonomous — review the diff.
+          git push -f origin "$BRANCH"
+
+          EXISTING=$(gh pr list --head "$BRANCH" --json number -q '.[0].number' || true)
+          if [ -z "$EXISTING" ]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "$(gh issue view "$ISSUE" --json title -q .title)" \
+              --body "Closes #$ISSUE. Autonomous — review the diff.
 
           Generated with Claude Code via OpenRouter."
+          else
+            gh issue comment "$ISSUE" --body "Updated existing PR #$EXISTING."
+          fi
+
+      - name: Report failure
+        if: failure()
+        run: |
+          gh issue comment "$ISSUE" --body "Job failed — see the Actions log.
+
+          \`\`\`
+          $(tail -n 20 /tmp/claude.log 2>/dev/null || echo 'no claude log')
+          \`\`\`" || true

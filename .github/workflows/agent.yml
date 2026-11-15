@@ -22,10 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      ANTHROPIC_BASE_URL: https://openrouter.ai/api/v1
+      ANTHROPIC_BASE_URL: https://openrouter.ai/api
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.OPENROUTER_API_KEY }}
       ANTHROPIC_API_KEY: ""
       ANTHROPIC_MODEL: anthropic/claude-sonnet-4.6
+      CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1"
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ISSUE: ${{ github.event.issue.number || inputs.issue }}
     steps:

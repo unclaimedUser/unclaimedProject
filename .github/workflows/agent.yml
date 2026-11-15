@@ -43,6 +43,9 @@ jobs:
           BRANCH="agent/issue-$ISSUE"
           git checkout -b "$BRANCH"
 
+          git config user.name "unclaimed-agent"
+          git config user.email "agent@users.noreply.github.com"
+
           set +e
           echo "$BODY" | claude -p --max-turns 40 \
             --permission-mode dontAsk \
@@ -54,7 +57,11 @@ jobs:
           echo "claude exit: $CODE"
           tail -n 30 /tmp/claude.log
 
-          if git diff --quiet && git diff --cached --quiet; then
+          # Stage everything first: git diff ignores untracked files, so a
+          # newly created file looks like "no changes" until it is staged.
+          git add -A
+
+          if git diff --cached --quiet; then
             gh issue comment "$ISSUE" --body "No changes produced (exit $CODE). Log tail:
 
           \`\`\`
@@ -63,10 +70,10 @@ jobs:
             exit 0
           fi
 
-          git config user.name "unclaimed-agent"
-          git config user.email "agent@users.noreply.github.com"
-          git add -A && git commit -m "feat: resolve #$ISSUE"
+          git commit -m "feat: resolve #$ISSUE"
           git push origin "$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "$(gh issue view "$ISSUE" --json title -q .title)" \
-            --body "Closes #$ISSUE. Autonomous — review the diff."
+            --body "Closes #$ISSUE. Autonomous — review the diff.
+
+          Generated with Claude Code via OpenRouter."

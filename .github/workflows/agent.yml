@@ -59,11 +59,18 @@ jobs:
           echo "claude exit: $CODE"
           tail -n 30 /tmp/claude.log
 
-          # Stage first: git diff ignores untracked files, so a new file looks
-          # like "no changes" until it is staged.
+          # Commit anything the agent left uncommitted. Stage first: git diff
+          # ignores untracked files until they are staged.
           git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "feat: resolve #$ISSUE"
+          fi
 
-          if git diff --cached --quiet; then
+          # Measure work as commits ahead of main, not uncommitted changes.
+          # The agent may commit (and push) on its own; issue #10 was missed
+          # because the old check only looked at uncommitted changes.
+          AHEAD=$(git rev-list --count origin/main..HEAD)
+          if [ "$AHEAD" -eq 0 ]; then
             gh issue comment "$ISSUE" --body "No changes produced (exit $CODE). Log tail:
 
           \`\`\`
@@ -72,7 +79,6 @@ jobs:
             exit 0
           fi
 
-          git commit -m "feat: resolve #$ISSUE"
           git push -f origin "$BRANCH"
 
           EXISTING=$(gh pr list --head "$BRANCH" --json number -q '.[0].number' || true)

@@ -1,7 +1,9 @@
 name: agent
 on:
+  # Only the `agent` label starts a run. Opening or editing an issue is free,
+  # so issues can serve as the to-do list without spending credits.
   issues:
-    types: [opened]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       issue:
@@ -16,9 +18,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   run:
+    # The labeler (sender) must be the owner; anyone else's label is ignored.
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event.issue.user.login == github.repository_owner
+      (github.event.label.name == 'agent' &&
+       github.event.sender.login == github.repository_owner)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -67,8 +71,7 @@ jobs:
           fi
 
           # Measure work as commits ahead of main, not uncommitted changes.
-          # The agent may commit (and push) on its own; issue #10 was missed
-          # because the old check only looked at uncommitted changes.
+          # The agent may commit (and push) on its own.
           AHEAD=$(git rev-list --count origin/main..HEAD)
           if [ "$AHEAD" -eq 0 ]; then
             gh issue comment "$ISSUE" --body "No changes produced (exit $CODE). Log tail:
@@ -79,16 +82,34 @@ jobs:
             exit 0
           fi
 
+          # Verify here, because PRs created with GITHUB_TOKEN never trigger
+          # the ci workflow. A failure is reported, not fatal: the owner decides.
+          set +e
+          { npm test && npm run --if-present check:kb; } > /tmp/verify.log 2>&1
+          VCODE=$?
+          set -e
+          if [ "$VCODE" -eq 0 ]; then VERIFY=PASS; else VERIFY=FAIL; fi
+
+          {
+            echo "Closes #$ISSUE. Autonomous — review the diff."
+            echo
+            echo "### Verification: $VERIFY"
+            echo '```'
+            tail -n 40 /tmp/verify.log
+            echo '```'
+            echo
+            echo "Generated with Claude Code via OpenRouter."
+          } > /tmp/pr.md
+
           git push -f origin "$BRANCH"
 
           EXISTING=$(gh pr list --head "$BRANCH" --json number -q '.[0].number' || true)
           if [ -z "$EXISTING" ]; then
             gh pr create --base main --head "$BRANCH" \
               --title "$(gh issue view "$ISSUE" --json title -q .title)" \
-              --body "Closes #$ISSUE. Autonomous — review the diff.
-
-          Generated with Claude Code via OpenRouter."
+              --body-file /tmp/pr.md
           else
+            gh pr comment "$EXISTING" --body-file /tmp/pr.md
             gh issue comment "$ISSUE" --body "Updated existing PR #$EXISTING."
           fi
 
@@ -100,3 +121,8 @@ jobs:
           \`\`\`
           $(tail -n 20 /tmp/claude.log 2>/dev/null || echo 'no claude log')
           \`\`\`" || true
+
+      # Remove the label so adding it again triggers a fresh run.
+      - name: Release label
+        if: always() && github.event_name == 'issues'
+        run: gh issue edit "$ISSUE" --remove-label agent || true

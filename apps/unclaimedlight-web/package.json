@@ -1,0 +1,16 @@
+{
+  "name": "@unclaimed/unclaimedlight-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node src/build.mjs",
+    "test": "node --test",
+    "placeholders": "node scripts/make-placeholders.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "wrangler": "^3.100.0"
+  }
+}

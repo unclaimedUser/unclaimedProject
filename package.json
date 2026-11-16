@@ -1,0 +1,9 @@
+{
+  "name": "@unclaimed/project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check:kb": "node tools/check-kb.mjs"
+  }
+}

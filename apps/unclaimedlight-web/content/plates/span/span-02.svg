@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1600">
+  <defs>
+    <linearGradient id="g0" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#141516"/>
+      <stop offset="100%" stop-color="#323334"/>
+    </linearGradient>
+    <radialGradient id="gfog" cx="50%" cy="55%" r="40%">
+      <stop offset="0%" stop-color="#c8c4bc" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#c8c4bc" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="2400" height="1600" fill="url(#g0)"/>
+  <rect width="2400" height="1600" fill="url(#gfog)"/>
+  <path d="M 600,1400 L 600,700 Q 1200,200 1800,700 L 1800,1400" stroke="#484a4c" stroke-width="40" fill="none" stroke-linejoin="round"/>
+  <path d="M 600,1400 L 600,700 Q 1200,200 1800,700 L 1800,1400" stroke="#606264" stroke-width="8" fill="none" stroke-linejoin="round"/>
+  <line x1="1200" y1="1400" x2="800" y2="900" stroke="#383a3c" stroke-width="3" opacity="0.6"/>
+  <line x1="1200" y1="1400" x2="1600" y2="900" stroke="#383a3c" stroke-width="3" opacity="0.6"/>
+  <line x1="1200" y1="1400" x2="900" y2="800" stroke="#2e3032" stroke-width="2" opacity="0.4"/>
+  <line x1="1200" y1="1400" x2="1500" y2="800" stroke="#2e3032" stroke-width="2" opacity="0.4"/>
+</svg>

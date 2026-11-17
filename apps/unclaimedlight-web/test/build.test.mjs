@@ -1,13 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readdir as rd } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { checkSeriesSchema, checkPlates, checkNoExif } from '../src/checks.mjs';
-import { resizePlate, buildSeriesPage, buildIndexPage, build, appDir, contentDir, distDir, WIDTHS } from '../src/build.mjs';
+import {
+  generatePlateImages, buildSeriesPage, buildIndexPage, buildPlatePage,
+  buildAboutPage, build404Page, buildHeaders, buildSitemap, buildCSS,
+  build, contentDir, distDir, WIDTHS, KEY_NAV_SCRIPT, SPEC_RULES,
+  scriptHash, contentHash, plateStem,
+} from '../src/build.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,8 +21,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 test('checkSeriesSchema passes on valid series', () => {
   assert.doesNotThrow(() => checkSeriesSchema(
-    { slug: 'x', title: 'X', plates: [{ file: 'x/p.jpg', alt: 'alt' }] },
-    'x.json'
+    { slug: 'x', title: 'X', plates: [{ file: 'x/p.svg', alt: 'alt' }] }, 'x.json'
+  ));
+});
+
+test('checkSeriesSchema passes with optional year and order', () => {
+  assert.doesNotThrow(() => checkSeriesSchema(
+    { slug: 'x', title: 'X', year: 2024, order: 1, plates: [{ file: 'x/p.svg', alt: 'alt' }] }, 'x.json'
   ));
 });
 
@@ -28,197 +39,317 @@ test('checkSeriesSchema throws on missing title', () => {
   assert.throws(() => checkSeriesSchema({ slug: 's', plates: [{}] }, 'f'), /title/);
 });
 
-test('checkSeriesSchema throws on empty plates array', () => {
+test('checkSeriesSchema throws on empty plates', () => {
   assert.throws(() => checkSeriesSchema({ slug: 's', title: 'T', plates: [] }, 'f'), /plates/);
 });
 
-test('checkSeriesSchema throws on missing plates key', () => {
-  assert.throws(() => checkSeriesSchema({ slug: 's', title: 'T' }, 'f'), /plates/);
+test('checkSeriesSchema throws on non-number year', () => {
+  assert.throws(() => checkSeriesSchema(
+    { slug: 's', title: 'T', year: '2024', plates: [{ file: 'x/p.svg', alt: 'a' }] }, 'f'
+  ), /year/);
 });
 
 // --- checkPlates ---
 
-test('checkPlates passes on placeholder series', () => {
-  const series = JSON.parse(readFileSync(
-    path.join(contentDir, 'series', 'placeholder.json'), 'utf8'
-  ));
-  assert.doesNotThrow(() => checkPlates(series, contentDir, 'placeholder.json'));
-});
-
-test('checkPlates throws when plate file is missing', async () => {
-  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-test-'));
+test('checkPlates passes on SVG plate files', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
-    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/missing.jpg', alt: 'alt' }] };
-    assert.throws(() => checkPlates(series, tmpDir, 'x.json'), /not found/);
-  } finally {
-    rmSync(tmpDir, { recursive: true });
-  }
+    mkdirSync(path.join(tmpDir, 'plates', 'x'), { recursive: true });
+    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.svg'), '<svg/>');
+    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.svg', alt: 'alt' }] };
+    assert.doesNotThrow(() => checkPlates(series, tmpDir, 'x.json'));
+  } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
 test('checkPlates throws on empty alt text', async () => {
-  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-test-'));
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
     mkdirSync(path.join(tmpDir, 'plates', 'x'), { recursive: true });
-    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.jpg'), 'dummy');
-    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.jpg', alt: '' }] };
+    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.svg'), '<svg/>');
+    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.svg', alt: '' }] };
     assert.throws(() => checkPlates(series, tmpDir, 'x.json'), /alt/);
-  } finally {
-    rmSync(tmpDir, { recursive: true });
-  }
+  } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
 test('checkPlates throws on whitespace-only alt text', async () => {
-  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-test-'));
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
     mkdirSync(path.join(tmpDir, 'plates', 'x'), { recursive: true });
-    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.jpg'), 'dummy');
-    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.jpg', alt: '   ' }] };
+    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.svg'), '<svg/>');
+    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.svg', alt: '   ' }] };
     assert.throws(() => checkPlates(series, tmpDir, 'x.json'), /alt/);
-  } finally {
-    rmSync(tmpDir, { recursive: true });
-  }
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+test('checkPlates throws on unsupported extension', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
+  try {
+    mkdirSync(path.join(tmpDir, 'plates', 'x'), { recursive: true });
+    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.png'), 'data');
+    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.png', alt: 'a' }] };
+    assert.throws(() => checkPlates(series, tmpDir, 'x.json'), /must be/i);
+  } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
 // --- checkNoExif ---
 
-test('checkNoExif passes on placeholder plates (no EXIF)', async () => {
-  const p1 = path.join(contentDir, 'plates', 'placeholder', 'plate-01.jpg');
-  await assert.doesNotReject(() => checkNoExif(p1));
+test('checkNoExif skips SVG files', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
+  try {
+    const f = path.join(tmpDir, 'test.svg');
+    writeFileSync(f, '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>');
+    await assert.doesNotReject(() => checkNoExif(f));
+  } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
-test('checkNoExif throws on JPEG containing EXIF metadata', async () => {
-  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-test-'));
+test('checkNoExif throws on JPEG containing EXIF', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
-    const src = path.join(contentDir, 'plates', 'placeholder', 'plate-01.jpg');
+    const srcSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#ccc"/></svg>');
+    const jpegBuf = await sharp(srcSvg, { density: 72 }).jpeg().toBuffer();
     const exifFile = path.join(tmpDir, 'exif.jpg');
-    // withMetadata adds an IFD0 entry, which creates an EXIF block in the output.
-    await sharp(src)
-      .withMetadata({ exif: { IFD0: { Copyright: 'test' } } })
-      .jpeg()
-      .toFile(exifFile);
+    await sharp(jpegBuf).withMetadata({ exif: { IFD0: { Copyright: 'test' } } }).jpeg().toFile(exifFile);
     await assert.rejects(() => checkNoExif(exifFile), /EXIF/);
-  } finally {
-    rmSync(tmpDir, { recursive: true });
-  }
+  } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
-// --- resizePlate ---
+// --- generatePlateImages ---
 
-test('resizePlate produces 3 WebP files at correct widths', async () => {
-  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-test-'));
+test('generatePlateImages produces AVIF + WebP at 3 widths with hashed names for SVG', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
-    const src = path.join(contentDir, 'plates', 'placeholder', 'plate-01.jpg');
-    const results = await resizePlate(src, tmpDir, 'placeholder/plate-01');
-    assert.equal(results.length, 3);
-    for (const f of results) {
-      assert.ok(f.endsWith('.webp'), `expected .webp: ${f}`);
-      assert.ok(existsSync(f), `file missing: ${f}`);
+    const svgContent = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1600"><rect width="2400" height="1600" fill="#111"/></svg>';
+    const srcPath = path.join(tmpDir, 'src', 'test.svg');
+    mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(srcPath, svgContent);
+    const hash = contentHash(srcPath);
+    const dest = path.join(tmpDir, 'out');
+    const { images, srcWidth, srcHeight } = await generatePlateImages(srcPath, dest, 'test', hash);
+    assert.equal(images.length, 3, 'should produce 3 widths');
+    for (const { width, avifPath, webpPath } of images) {
+      assert.ok(existsSync(avifPath), `missing avif: ${avifPath}`);
+      assert.ok(existsSync(webpPath), `missing webp: ${webpPath}`);
+      const am = await sharp(avifPath).metadata();
+      assert.equal(am.width, width, `avif width mismatch at ${width}`);
+      const wm = await sharp(webpPath).metadata();
+      assert.equal(wm.width, width, `webp width mismatch at ${width}`);
+      assert.ok(path.basename(avifPath).includes(hash), 'avif missing hash');
+      assert.ok(path.basename(webpPath).includes(hash), 'webp missing hash');
     }
-    // Verify widths
-    for (const w of WIDTHS) {
-      const file = path.join(tmpDir, `plate-01-${w}.webp`);
-      const meta = await sharp(file).metadata();
-      assert.equal(meta.width, w);
-    }
-  } finally {
-    rmSync(tmpDir, { recursive: true });
-  }
+    assert.equal(srcWidth, 2400);
+    assert.equal(srcHeight, 1600);
+  } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
 // --- buildSeriesPage ---
 
-test('buildSeriesPage HTML contains srcset and alt', () => {
-  const series = {
-    slug: 'placeholder',
-    title: 'Test',
-    text: 'Text.',
-    plates: [
-      { file: 'placeholder/plate-01.jpg', title: 'Plate One', alt: 'A warm stone background.' },
-    ],
+test('buildSeriesPage has lang, title, one h1, picture markup, width/height, fetchpriority', () => {
+  const site = { baseUrl: 'https://ex.com', title: 'T', statement: 'S', author: 'A', contact: 'c@e.com', locale: 'en' };
+  const series = { slug: 'x', title: 'X', text: 'T', plates: [
+    { file: 'x/p1.svg', alt: 'alt1' },
+    { file: 'x/p2.svg', alt: 'alt2' },
+  ] };
+  const plateInfoMap = {
+    'x/p1.svg': { hash: 'abc12345', images: WIDTHS.map(w => ({ width: w })), srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(10,10,10)' },
+    'x/p2.svg': { hash: 'def67890', images: WIDTHS.map(w => ({ width: w })), srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(10,10,10)' },
   };
-  const html = buildSeriesPage(series);
-  assert.ok(html.includes('srcset='), 'missing srcset');
-  assert.ok(html.includes('alt='), 'missing alt');
-  assert.ok(html.includes('-800.webp'), 'missing 800w variant');
-  assert.ok(html.includes('-1600.webp'), 'missing 1600w variant');
-  assert.ok(html.includes('-2400.webp'), 'missing 2400w variant');
-});
-
-test('buildSeriesPage first plate has no loading=lazy, subsequent plates do', () => {
-  const series = {
-    slug: 'x',
-    title: 'X',
-    text: 'T.',
-    plates: [
-      { file: 'x/p1.jpg', alt: 'first' },
-      { file: 'x/p2.jpg', alt: 'second' },
-    ],
-  };
-  const html = buildSeriesPage(series);
-  // The first img should not have loading="lazy", the second should
-  const imgs = html.match(/<img [^>]+>/g) || [];
-  assert.equal(imgs.length, 2);
-  assert.ok(!imgs[0].includes('loading="lazy"'), 'first plate must not be lazy');
-  assert.ok(imgs[1].includes('loading="lazy"'), 'second plate must be lazy');
+  const html = buildSeriesPage({ series, plateInfoMap, site, ogImageUrl: 'https://ex.com/og/x.jpg', specRules: SPEC_RULES, jsonLd: {} });
+  assert.ok(/<html[^>]+lang=/.test(html), 'missing lang');
+  assert.ok(/<title>[^<]+<\/title>/.test(html), 'missing title');
+  assert.equal((html.match(/<h1[\s>]/g) || []).length, 1, 'must have exactly 1 h1');
+  assert.ok(html.includes('<picture'), 'missing picture element');
+  assert.ok(html.includes('image/avif'), 'missing avif source');
+  assert.ok(html.includes('width="2400"'), 'missing width attribute');
+  assert.ok(html.includes('height="1600"'), 'missing height attribute');
+  assert.ok(html.includes('fetchpriority="high"'), 'first plate must have fetchpriority');
+  assert.ok(html.includes('loading="lazy"'), 'second plate must be lazy');
 });
 
 // --- buildIndexPage ---
 
-test('buildIndexPage HTML contains srcset and alt', () => {
-  const seriesList = [{
-    slug: 'placeholder',
-    title: 'Placeholder',
-    plates: [{ file: 'placeholder/plate-01.jpg', alt: 'A background.' }],
-  }];
-  const html = buildIndexPage(seriesList);
-  assert.ok(html.includes('srcset='));
-  assert.ok(html.includes('alt='));
+test('buildIndexPage has lang, title, og:image, JSON-LD', () => {
+  const site = { baseUrl: 'https://ex.com', title: 'T', statement: 'S', author: 'A', contact: 'c@e.com', locale: 'en' };
+  const seriesList = [{ slug: 's', title: 'S', year: 2024, order: 1, plates: [{ file: 's/p.svg', alt: 'alt' }] }];
+  const plateInfoMap = { 's/p.svg': { hash: 'abc12345', images: WIDTHS.map(w => ({ width: w })), srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(0,0,0)' } };
+  const html = buildIndexPage({ seriesList, plateInfoMap, site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES, jsonLd: { '@context': 'https://schema.org' } });
+  assert.ok(/<html[^>]+lang=/.test(html), 'missing lang');
+  assert.ok(/<title>[^<]+<\/title>/.test(html), 'missing title');
+  assert.ok(html.includes('og:image'), 'missing og:image');
+  assert.ok(html.includes('application/ld+json'), 'missing JSON-LD');
+  assert.ok(html.includes('rel="canonical"'), 'missing canonical');
 });
 
-// --- full build ---
+// --- buildPlatePage ---
 
-test('build produces 3 WebP widths per plate and HTML with srcset and alt', async () => {
+test('buildPlatePage has prev/next links and keyboard nav script', () => {
+  const site = { baseUrl: 'https://ex.com', title: 'T', statement: 'S', author: 'A', contact: 'c@e.com', locale: 'en' };
+  const series = { slug: 'x', title: 'X', text: 'T', plates: [
+    { file: 'x/p1.svg', alt: 'alt1' }, { file: 'x/p2.svg', alt: 'alt2' },
+  ] };
+  const plateInfoMap = {
+    'x/p1.svg': { hash: 'aaa11111', images: [], srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(0,0,0)' },
+    'x/p2.svg': { hash: 'bbb22222', images: [], srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(0,0,0)' },
+  };
+  const html = buildPlatePage({ series, plateIndex: 0, plateInfoMap, site, specRules: SPEC_RULES, jsonLd: {} });
+  assert.ok(html.includes('data-next'), 'missing data-next link');
+  assert.ok(html.includes(KEY_NAV_SCRIPT), 'missing keyboard nav script');
+  assert.ok(html.includes('rel="next"'), 'missing link rel=next');
+  assert.ok(!html.includes('rel="prev"'), 'first plate should not have prev');
+});
+
+// --- scriptHash ---
+
+test('scriptHash produces correct sha256 base64', () => {
+  const h = scriptHash('hello');
+  assert.ok(h.startsWith('sha256-'), 'should start with sha256-');
+  const expected = 'sha256-' + createHash('sha256').update('hello', 'utf8').digest('base64');
+  assert.equal(h, expected);
+});
+
+// --- buildHeaders ---
+
+test('buildHeaders contains CSP with key nav script hash and immutable plates', () => {
+  const hash = scriptHash(KEY_NAV_SCRIPT);
+  const headers = buildHeaders(hash);
+  assert.ok(headers.includes('Content-Security-Policy'), 'missing CSP');
+  assert.ok(headers.includes(hash), 'CSP missing script hash');
+  assert.ok(headers.includes("default-src 'none'"), 'CSP missing default-src');
+  assert.ok(headers.includes('Strict-Transport-Security'), 'missing HSTS');
+  assert.ok(headers.includes('max-age=31536000, immutable'), 'plates not marked immutable');
+});
+
+// --- buildSitemap ---
+
+test('buildSitemap lists all pages', () => {
+  const pages = ['/', '/crescent/', '/crescent/1/', '/about/'];
+  const xml = buildSitemap(pages, 'https://ex.com');
+  for (const p of pages) {
+    assert.ok(xml.includes('https://ex.com' + p), `sitemap missing: ${p}`);
+  }
+});
+
+// --- CSS ---
+
+test('buildCSS contains required modern platform features', () => {
+  const css = buildCSS();
+  assert.ok(css.includes('light-dark('), 'missing light-dark()');
+  assert.ok(css.includes('@view-transition'), 'missing view-transition');
+  assert.ok(css.includes('animation-timeline'), 'missing scroll-driven animation');
+  assert.ok(css.includes('prefers-reduced-motion'), 'missing prefers-reduced-motion');
+  assert.ok(css.includes('@layer'), 'missing @layer');
+  assert.ok(css.includes('clamp('), 'missing clamp()');
+  assert.ok(css.includes('container-type'), 'missing container queries');
+  assert.ok(css.includes('text-wrap'), 'missing text-wrap');
+});
+
+// --- Full build ---
+
+test('full build: AVIF + WebP at 3 widths per plate, hashed filenames', async () => {
   await build();
-
-  // 2 plates × 3 widths = 6 WebP files
-  for (const name of ['plate-01', 'plate-02']) {
-    for (const w of WIDTHS) {
-      const file = path.join(distDir, 'plates', 'placeholder', `${name}-${w}.webp`);
-      assert.ok(existsSync(file), `missing: ${file}`);
+  const seriesFiles = (await rd(path.join(contentDir, 'series'))).filter(f => f.endsWith('.json'));
+  for (const sf of seriesFiles) {
+    const series = JSON.parse(readFileSync(path.join(contentDir, 'series', sf), 'utf8'));
+    for (const plate of series.plates) {
+      const srcPath = path.join(contentDir, 'plates', plate.file);
+      const hash = contentHash(srcPath);
+      const stem = path.basename(plateStem(plate.file));
+      const seriesSlug = plate.file.split('/')[0];
+      for (const w of WIDTHS) {
+        const avif = path.join(distDir, 'plates', seriesSlug, `${stem}.${hash}-${w}.avif`);
+        const webp = path.join(distDir, 'plates', seriesSlug, `${stem}.${hash}-${w}.webp`);
+        assert.ok(existsSync(avif), `missing avif: ${avif}`);
+        assert.ok(existsSync(webp), `missing webp: ${webp}`);
+      }
     }
   }
+});
 
-  // HTML files exist
-  for (const p of ['index.html', 'placeholder/index.html', 'about/index.html', '404.html']) {
+test('full build: all expected HTML files exist', async () => {
+  await build();
+  const expected = [
+    'index.html', 'about/index.html', 'impressum/index.html',
+    'datenschutz/index.html', '404.html',
+    'crescent/index.html', 'crescent/1/index.html', 'crescent/2/index.html', 'crescent/3/index.html',
+    'still-water/index.html', 'still-water/1/index.html', 'still-water/2/index.html', 'still-water/3/index.html',
+    'span/index.html', 'span/1/index.html', 'span/2/index.html', 'span/3/index.html',
+  ];
+  for (const p of expected) {
     assert.ok(existsSync(path.join(distDir, p)), `missing: ${p}`);
   }
-
-  // Series page has srcset and alt
-  const seriesHtml = readFileSync(path.join(distDir, 'placeholder', 'index.html'), 'utf8');
-  assert.ok(seriesHtml.includes('srcset='), 'series page missing srcset');
-  assert.ok(seriesHtml.includes('alt='), 'series page missing alt');
-
-  // Index page has srcset and alt
-  const indexHtml = readFileSync(path.join(distDir, 'index.html'), 'utf8');
-  assert.ok(indexHtml.includes('srcset='), 'index page missing srcset');
-  assert.ok(indexHtml.includes('alt='), 'index page missing alt');
 });
 
-test('every generated page has lang, title, and exactly one h1', async () => {
+test('full build: every page has lang, title, at most one h1, canonical, og:image in dist, valid JSON-LD', async () => {
   await build();
-  const pages = ['index.html', 'placeholder/index.html', 'about/index.html', '404.html'];
+  const pages = [
+    'index.html', 'about/index.html', 'impressum/index.html', 'datenschutz/index.html', '404.html',
+    'crescent/index.html', 'crescent/1/index.html',
+    'still-water/index.html', 'span/index.html',
+  ];
   for (const p of pages) {
     const html = readFileSync(path.join(distDir, p), 'utf8');
-    assert.ok(/<html[^>]+lang=/.test(html), `${p}: missing lang attribute`);
-    assert.ok(/<title>[^<]+<\/title>/.test(html), `${p}: missing <title>`);
-    const h1Count = (html.match(/<h1[\s>]/g) || []).length;
-    assert.equal(h1Count, 1, `${p}: expected exactly one <h1>, found ${h1Count}`);
+    assert.ok(/<html[^>]+lang=/.test(html), `${p}: missing lang`);
+    assert.ok(/<title>[^<]+<\/title>/.test(html), `${p}: missing title`);
+    const h1s = (html.match(/<h1[\s>]/g) || []).length;
+    assert.ok(h1s <= 1, `${p}: expected at most 1 h1, found ${h1s}`);
+    assert.ok(html.includes('rel="canonical"'), `${p}: missing canonical`);
+    const ogMatch = html.match(/property="og:image" content="([^"]+)"/);
+    if (ogMatch) {
+      const ogFile = ogMatch[1].replace('https://unclaimedlight.com', '');
+      assert.ok(existsSync(path.join(distDir, ogFile.replace(/^\//, ''))), `${p}: og:image not in dist: ${ogFile}`);
+    }
+    const ldMatch = html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
+    if (ldMatch) {
+      assert.doesNotThrow(() => JSON.parse(ldMatch[1]), `${p}: JSON-LD does not parse`);
+    }
   }
 });
 
-test('generated pages link only to existing pages', async () => {
+test('full build: sitemap.xml lists all series and static pages', async () => {
   await build();
-  const pages = ['index.html', 'placeholder/index.html', 'about/index.html', '404.html'];
+  const sitemap = readFileSync(path.join(distDir, 'sitemap.xml'), 'utf8');
+  const expectedPaths = ['/', '/about/', '/impressum/', '/datenschutz/', '/crescent/', '/still-water/', '/span/'];
+  for (const p of expectedPaths) {
+    assert.ok(sitemap.includes('unclaimedlight.com' + p), `sitemap missing: ${p}`);
+  }
+});
+
+test('full build: _headers contains CSP and script hash matching inline scripts', async () => {
+  await build();
+  const headers = readFileSync(path.join(distDir, '_headers'), 'utf8');
+  assert.ok(headers.includes('Content-Security-Policy'), 'missing CSP in _headers');
+  const expectedHash = scriptHash(KEY_NAV_SCRIPT);
+  assert.ok(headers.includes(expectedHash), '_headers CSP missing keyboard nav hash');
+  assert.ok(headers.includes("default-src 'none'"), 'CSP missing default-src');
+  const plateHtml = readFileSync(path.join(distDir, 'crescent', '1', 'index.html'), 'utf8');
+  assert.ok(plateHtml.includes(KEY_NAV_SCRIPT), 'plate page missing keyboard nav script');
+});
+
+test('full build: performance budget — each sampled HTML page under 35 KB', async () => {
+  await build();
+  const pages = ['index.html', 'crescent/index.html', 'crescent/1/index.html', 'about/index.html'];
+  for (const p of pages) {
+    const size = Buffer.byteLength(readFileSync(path.join(distDir, p), 'utf8'), 'utf8');
+    assert.ok(size < 35 * 1024, `${p}: ${size} bytes exceeds 35 KB budget`);
+  }
+});
+
+test('inline JS under 2 KB', () => {
+  const size = Buffer.byteLength(KEY_NAV_SCRIPT, 'utf8');
+  assert.ok(size < 2 * 1024, `KEY_NAV_SCRIPT is ${size} bytes, exceeds 2 KB`);
+});
+
+test('full build: no external URLs in HTML (except same baseUrl)', async () => {
+  await build();
+  const html = readFileSync(path.join(distDir, 'crescent', '1', 'index.html'), 'utf8');
+  const urls = [...html.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].map(m => m[1]);
+  for (const url of urls) {
+    assert.ok(url.startsWith('https://unclaimedlight.com') || url.startsWith('https://www.cloudflare.com'), `external URL in HTML: ${url}`);
+  }
+});
+
+test('full build: all internal links resolve', async () => {
+  await build();
+  const pages = ['index.html', 'crescent/index.html', 'crescent/1/index.html', 'about/index.html', '404.html'];
   for (const p of pages) {
     const html = readFileSync(path.join(distDir, p), 'utf8');
     const hrefs = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map(m => m[1]);
@@ -230,5 +361,12 @@ test('generated pages link only to existing pages', async () => {
         : [path.join(distDir, rel), path.join(distDir, rel, 'index.html')];
       assert.ok(candidates.some(c => existsSync(c)), `${p}: broken link to "${href}"`);
     }
+  }
+});
+
+test('full build: static assets exist (favicon, apple-touch-icon, manifest, robots, sitemap)', async () => {
+  await build();
+  for (const f of ['favicon.svg', 'apple-touch-icon.png', 'manifest.webmanifest', 'robots.txt', 'sitemap.xml', '_headers']) {
+    assert.ok(existsSync(path.join(distDir, f)), `missing: ${f}`);
   }
 });

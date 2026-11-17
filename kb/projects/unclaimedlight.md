@@ -86,3 +86,50 @@ originals need to stay private.
 - Contact: email on About page? Default: a `sec.unclaimedlight.com` alias, shown as text, no form.
 - Typeface: default a system serif stack (no web font download).
 - `www.unclaimedlight.com`: default redirect to the apex.
+
+## Design v0.2
+
+Implemented in `apps/unclaimedlight-web/` on branch `agent/issue-32`.
+
+### Content model changes
+- `content/site.json` added: `baseUrl`, `title`, `statement`, `author`, `contact`, `locale`.
+- Series JSON now supports optional `year` and `order` fields; plates support optional `caption`.
+- Plate sources may be `.jpg` or `.svg`; SVGs are rasterized by sharp at 2400 px wide.
+- Replaced single placeholder series with three on-brand SVG placeholder series: `crescent`, `still-water`, `span` (3 plates each, hand-written SVGs matching the brand's visual DNA).
+
+### Image pipeline
+- Generates AVIF + WebP (not just WebP) at 800/1600/2400 px with content-hashed filenames (`<plate>.<hash8>-<w>.avif`).
+- Reads source dimensions; `<img>` tags carry `width`/`height` to prevent layout shift.
+- Computes dominant colour per plate; used as `background-color` on the `<img>` while loading.
+- `<picture>` markup: AVIF source → WebP source → `<img>` fallback with `decoding="async"`, `fetchpriority="high"` + eager loading on first image, lazy elsewhere.
+- Generates 1200×630 JPEG Open Graph images per series and one for the site.
+
+### Pages added
+- Plate pages `/<slug>/<n>/` with `object-fit: contain` at `100dvh`, prev/next/back navigation, `<link rel="prev/next">`.
+- `/impressum/` and `/datenschutz/` legal placeholder pages (required for German-hosted sites).
+- Footer on every page: About · Impressum · Datenschutz · © year.
+
+### Modern platform features (all progressive)
+- Cross-document View Transitions: `@view-transition { navigation: auto }` with `view-transition-name` on plate images.
+- Speculation Rules: inline `<script type="speculationrules">` with `moderate` eagerness on all pages.
+- Keyboard navigation on plate pages (← → Esc): inline module under 1 KB.
+- CSS inlined into every page (no extra request): `@layer`, nesting, `clamp()` fluid type, `text-wrap: balance/pretty`, container queries for the series index, `light-dark()` with `color-scheme: light dark`, scroll-driven fade-in (`animation-timeline: view()` inside `@supports`), all motion disabled under `prefers-reduced-motion`.
+
+### Metadata and SEO
+- Per-page `<title>`, meta description, canonical, Open Graph, Twitter card, `theme-color` for light/dark.
+- JSON-LD: `WebSite` + `Person` on home; `ImageGallery` on series; `Photograph` on plate pages.
+- `sitemap.xml`, `robots.txt`, `favicon.svg` (monogram), `apple-touch-icon.png`, `manifest.webmanifest`.
+
+### Security headers (`dist/_headers`)
+- Strict CSP: `default-src 'none'`; `script-src` with SHA-256 hash of the keyboard nav script computed at build time, plus `'inline-speculation-rules'`; `style-src 'unsafe-inline'` (CSS is inlined, no nonce system needed).
+- `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`.
+- Hashed image paths: `Cache-Control: public, max-age=31536000, immutable`; HTML: `max-age=0, must-revalidate`.
+
+### Owner placeholders to replace before launch
+1. `content/site.json` — `statement`, `author`
+2. `content/series/crescent.json` — series `text`, plate `alt` values, replace SVGs with real photos
+3. `content/series/still-water.json` — same as above
+4. `content/series/span.json` — same as above
+5. `/about/` — name, biography text
+6. `/impressum/` — legal name, address, contact (§5 TMG)
+7. `/datenschutz/` — extend with jurisdiction-specific requirements

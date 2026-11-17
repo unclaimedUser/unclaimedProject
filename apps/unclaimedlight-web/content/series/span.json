@@ -1,0 +1,12 @@
+{
+  "slug": "span",
+  "title": "Span",
+  "text": "[PLACEHOLDER: series statement for Span]",
+  "year": 2024,
+  "order": 3,
+  "plates": [
+    { "file": "span/span-01.svg", "alt": "Placeholder: two bridge towers with suspension cables receding into atmospheric haze, telephoto compression" },
+    { "file": "span/span-02.svg", "alt": "Placeholder: a symmetrical arch seen from center, perspective lines converging into misty depth" },
+    { "file": "span/span-03.svg", "alt": "Placeholder: multiple thin vertical suspension cables compressed by telephoto, fading into darkness above and below" }
+  ]
+}

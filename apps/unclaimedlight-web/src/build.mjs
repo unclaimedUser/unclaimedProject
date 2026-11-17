@@ -78,6 +78,7 @@ picture{display:block}
 @layer layout{
 .skip-link{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
 .skip-link:focus{position:fixed;left:1rem;top:1rem;width:auto;height:auto;padding:.5rem 1rem;background:light-dark(#1A1B1C,#ECE9E3);color:light-dark(#ECE9E3,#1A1B1C);z-index:999}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 main{flex:1}
 footer{padding:1.5rem 2rem;font-size:.8125rem;letter-spacing:.06em;text-transform:uppercase;display:flex;gap:1.5rem;flex-wrap:wrap}
 footer a:hover{opacity:.6}
@@ -382,6 +383,7 @@ export function buildPlatePage({ series, plateIndex, plateInfoMap, site, specRul
 ${head}
 <body class="plate-page">
 <a class="skip-link" href="#main-content">Skip to content</a>
+<h1 class="sr-only">${esc(series.title + plateTitle)}</h1>
 <nav class="site-nav plate-nav">${backLink} ${prevLink} ${nextLink}</nav>
 <main id="main-content">
 <div class="plate-frame">${picture}</div>

@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdtemp, readdir as rd } from 'node:fs/promises';
@@ -11,7 +11,7 @@ import { checkSeriesSchema, checkPlates, checkNoExif } from '../src/checks.mjs';
 import {
   generatePlateImages, buildSeriesPage, buildIndexPage, buildPlatePage,
   buildAboutPage, build404Page, buildHeaders, buildSitemap, buildCSS,
-  build, contentDir, distDir, WIDTHS, KEY_NAV_SCRIPT, SPEC_RULES,
+  build, readAllSeries, contentDir, distDir, WIDTHS, KEY_NAV_SCRIPT, SPEC_RULES,
   scriptHash, contentHash, plateStem,
 } from '../src/build.mjs';
 
@@ -245,129 +245,127 @@ test('buildCSS contains required modern platform features', () => {
 
 // --- Full build ---
 
-test('full build: AVIF + WebP at 3 widths per plate, hashed filenames', async () => {
-  await build();
-  const seriesFiles = (await rd(path.join(contentDir, 'series'))).filter(f => f.endsWith('.json'));
-  for (const sf of seriesFiles) {
-    const series = JSON.parse(readFileSync(path.join(contentDir, 'series', sf), 'utf8'));
-    for (const plate of series.plates) {
-      const srcPath = path.join(contentDir, 'plates', plate.file);
-      const hash = contentHash(srcPath);
-      const stem = path.basename(plateStem(plate.file));
-      const seriesSlug = plate.file.split('/')[0];
-      for (const w of WIDTHS) {
-        const avif = path.join(distDir, 'plates', seriesSlug, `${stem}.${hash}-${w}.avif`);
-        const webp = path.join(distDir, 'plates', seriesSlug, `${stem}.${hash}-${w}.webp`);
-        assert.ok(existsSync(avif), `missing avif: ${avif}`);
-        assert.ok(existsSync(webp), `missing webp: ${webp}`);
+// Build once; all tests in this describe block share the output.
+describe('full build', () => {
+  before(async () => {
+    await build();
+  });
+
+  test('AVIF + WebP at 3 widths per plate, hashed filenames', async () => {
+    // Uses readAllSeries() so draft series (e.g. placeholder) are excluded, matching build behaviour.
+    const seriesEntries = await readAllSeries();
+    for (const { data: series } of seriesEntries) {
+      for (const plate of series.plates) {
+        const srcPath = path.join(contentDir, 'plates', plate.file);
+        const hash = contentHash(srcPath);
+        const stem = path.basename(plateStem(plate.file));
+        const seriesSlug = plate.file.split('/')[0];
+        for (const w of WIDTHS) {
+          const avif = path.join(distDir, 'plates', seriesSlug, `${stem}.${hash}-${w}.avif`);
+          const webp = path.join(distDir, 'plates', seriesSlug, `${stem}.${hash}-${w}.webp`);
+          assert.ok(existsSync(avif), `missing avif: ${avif}`);
+          assert.ok(existsSync(webp), `missing webp: ${webp}`);
+        }
       }
     }
-  }
-});
+  });
 
-test('full build: all expected HTML files exist', async () => {
-  await build();
-  const expected = [
-    'index.html', 'about/index.html', 'impressum/index.html',
-    'datenschutz/index.html', '404.html',
-    'crescent/index.html', 'crescent/1/index.html', 'crescent/2/index.html', 'crescent/3/index.html',
-    'still-water/index.html', 'still-water/1/index.html', 'still-water/2/index.html', 'still-water/3/index.html',
-    'span/index.html', 'span/1/index.html', 'span/2/index.html', 'span/3/index.html',
-  ];
-  for (const p of expected) {
-    assert.ok(existsSync(path.join(distDir, p)), `missing: ${p}`);
-  }
-});
-
-test('full build: every page has lang, title, at most one h1, canonical, og:image in dist, valid JSON-LD', async () => {
-  await build();
-  const pages = [
-    'index.html', 'about/index.html', 'impressum/index.html', 'datenschutz/index.html', '404.html',
-    'crescent/index.html', 'crescent/1/index.html',
-    'still-water/index.html', 'span/index.html',
-  ];
-  for (const p of pages) {
-    const html = readFileSync(path.join(distDir, p), 'utf8');
-    assert.ok(/<html[^>]+lang=/.test(html), `${p}: missing lang`);
-    assert.ok(/<title>[^<]+<\/title>/.test(html), `${p}: missing title`);
-    const h1s = (html.match(/<h1[\s>]/g) || []).length;
-    assert.equal(h1s, 1, `${p}: expected exactly 1 h1, found ${h1s}`);
-    assert.ok(html.includes('rel="canonical"'), `${p}: missing canonical`);
-    const ogMatch = html.match(/property="og:image" content="([^"]+)"/);
-    if (ogMatch) {
-      const ogFile = ogMatch[1].replace('https://unclaimedlight.com', '');
-      assert.ok(existsSync(path.join(distDir, ogFile.replace(/^\//, ''))), `${p}: og:image not in dist: ${ogFile}`);
+  test('all expected HTML files exist', () => {
+    const expected = [
+      'index.html', 'about/index.html', 'impressum/index.html',
+      'datenschutz/index.html', '404.html',
+      'crescent/index.html', 'crescent/1/index.html', 'crescent/2/index.html', 'crescent/3/index.html',
+      'still-water/index.html', 'still-water/1/index.html', 'still-water/2/index.html', 'still-water/3/index.html',
+      'span/index.html', 'span/1/index.html', 'span/2/index.html', 'span/3/index.html',
+    ];
+    for (const p of expected) {
+      assert.ok(existsSync(path.join(distDir, p)), `missing: ${p}`);
     }
-    const ldMatch = html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
-    if (ldMatch) {
-      assert.doesNotThrow(() => JSON.parse(ldMatch[1]), `${p}: JSON-LD does not parse`);
+  });
+
+  test('every page has lang, title, at most one h1, canonical, og:image in dist, valid JSON-LD', () => {
+    const pages = [
+      'index.html', 'about/index.html', 'impressum/index.html', 'datenschutz/index.html', '404.html',
+      'crescent/index.html', 'crescent/1/index.html',
+      'still-water/index.html', 'span/index.html',
+    ];
+    for (const p of pages) {
+      const html = readFileSync(path.join(distDir, p), 'utf8');
+      assert.ok(/<html[^>]+lang=/.test(html), `${p}: missing lang`);
+      assert.ok(/<title>[^<]+<\/title>/.test(html), `${p}: missing title`);
+      const h1s = (html.match(/<h1[\s>]/g) || []).length;
+      assert.equal(h1s, 1, `${p}: expected exactly 1 h1, found ${h1s}`);
+      assert.ok(html.includes('rel="canonical"'), `${p}: missing canonical`);
+      const ogMatch = html.match(/property="og:image" content="([^"]+)"/);
+      if (ogMatch) {
+        const ogFile = ogMatch[1].replace('https://unclaimedlight.com', '');
+        assert.ok(existsSync(path.join(distDir, ogFile.replace(/^\//, ''))), `${p}: og:image not in dist: ${ogFile}`);
+      }
+      const ldMatch = html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
+      if (ldMatch) {
+        assert.doesNotThrow(() => JSON.parse(ldMatch[1]), `${p}: JSON-LD does not parse`);
+      }
     }
-  }
-});
+  });
 
-test('full build: sitemap.xml lists all series and static pages', async () => {
-  await build();
-  const sitemap = readFileSync(path.join(distDir, 'sitemap.xml'), 'utf8');
-  const expectedPaths = ['/', '/about/', '/impressum/', '/datenschutz/', '/crescent/', '/still-water/', '/span/'];
-  for (const p of expectedPaths) {
-    assert.ok(sitemap.includes('unclaimedlight.com' + p), `sitemap missing: ${p}`);
-  }
-});
+  test('sitemap.xml lists all series and static pages', () => {
+    const sitemap = readFileSync(path.join(distDir, 'sitemap.xml'), 'utf8');
+    const expectedPaths = ['/', '/about/', '/impressum/', '/datenschutz/', '/crescent/', '/still-water/', '/span/'];
+    for (const p of expectedPaths) {
+      assert.ok(sitemap.includes('unclaimedlight.com' + p), `sitemap missing: ${p}`);
+    }
+  });
 
-test('full build: _headers contains CSP and script hash matching inline scripts', async () => {
-  await build();
-  const headers = readFileSync(path.join(distDir, '_headers'), 'utf8');
-  assert.ok(headers.includes('Content-Security-Policy'), 'missing CSP in _headers');
-  const expectedHash = scriptHash(KEY_NAV_SCRIPT);
-  assert.ok(headers.includes(expectedHash), '_headers CSP missing keyboard nav hash');
-  assert.ok(headers.includes("default-src 'none'"), 'CSP missing default-src');
-  const plateHtml = readFileSync(path.join(distDir, 'crescent', '1', 'index.html'), 'utf8');
-  assert.ok(plateHtml.includes(KEY_NAV_SCRIPT), 'plate page missing keyboard nav script');
-});
+  test('_headers contains CSP and script hash matching inline scripts', () => {
+    const headers = readFileSync(path.join(distDir, '_headers'), 'utf8');
+    assert.ok(headers.includes('Content-Security-Policy'), 'missing CSP in _headers');
+    const expectedHash = scriptHash(KEY_NAV_SCRIPT);
+    assert.ok(headers.includes(expectedHash), '_headers CSP missing keyboard nav hash');
+    assert.ok(headers.includes("default-src 'none'"), 'CSP missing default-src');
+    const plateHtml = readFileSync(path.join(distDir, 'crescent', '1', 'index.html'), 'utf8');
+    assert.ok(plateHtml.includes(KEY_NAV_SCRIPT), 'plate page missing keyboard nav script');
+  });
 
-test('full build: performance budget — each sampled HTML page under 35 KB', async () => {
-  await build();
-  const pages = ['index.html', 'crescent/index.html', 'crescent/1/index.html', 'about/index.html'];
-  for (const p of pages) {
-    const size = Buffer.byteLength(readFileSync(path.join(distDir, p), 'utf8'), 'utf8');
-    assert.ok(size < 35 * 1024, `${p}: ${size} bytes exceeds 35 KB budget`);
-  }
+  test('performance budget — each sampled HTML page under 35 KB', () => {
+    const pages = ['index.html', 'crescent/index.html', 'crescent/1/index.html', 'about/index.html'];
+    for (const p of pages) {
+      const size = Buffer.byteLength(readFileSync(path.join(distDir, p), 'utf8'), 'utf8');
+      assert.ok(size < 35 * 1024, `${p}: ${size} bytes exceeds 35 KB budget`);
+    }
+  });
+
+  test('no external URLs in HTML (except same baseUrl)', () => {
+    const html = readFileSync(path.join(distDir, 'crescent', '1', 'index.html'), 'utf8');
+    const urls = [...html.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].map(m => m[1]);
+    for (const url of urls) {
+      assert.ok(url.startsWith('https://unclaimedlight.com') || url.startsWith('https://www.cloudflare.com'), `external URL in HTML: ${url}`);
+    }
+  });
+
+  test('all internal links resolve', () => {
+    const pages = ['index.html', 'crescent/index.html', 'crescent/1/index.html', 'about/index.html', '404.html'];
+    for (const p of pages) {
+      const html = readFileSync(path.join(distDir, p), 'utf8');
+      const hrefs = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map(m => m[1]);
+      for (const href of hrefs) {
+        if (href.startsWith('http') || href.startsWith('//') || href.startsWith('#') || href.startsWith('mailto:')) continue;
+        const rel = href.replace(/^\//, '').replace(/\/$/, '');
+        const candidates = rel === ''
+          ? [path.join(distDir, 'index.html')]
+          : [path.join(distDir, rel), path.join(distDir, rel, 'index.html')];
+        assert.ok(candidates.some(c => existsSync(c)), `${p}: broken link to "${href}"`);
+      }
+    }
+  });
+
+  test('static assets exist (favicon, apple-touch-icon, manifest, robots, sitemap)', () => {
+    for (const f of ['favicon.svg', 'apple-touch-icon.png', 'manifest.webmanifest', 'robots.txt', 'sitemap.xml', '_headers']) {
+      assert.ok(existsSync(path.join(distDir, f)), `missing: ${f}`);
+    }
+  });
 });
 
 test('inline JS under 2 KB', () => {
   const size = Buffer.byteLength(KEY_NAV_SCRIPT, 'utf8');
   assert.ok(size < 2 * 1024, `KEY_NAV_SCRIPT is ${size} bytes, exceeds 2 KB`);
-});
-
-test('full build: no external URLs in HTML (except same baseUrl)', async () => {
-  await build();
-  const html = readFileSync(path.join(distDir, 'crescent', '1', 'index.html'), 'utf8');
-  const urls = [...html.matchAll(/(?:src|href)="(https?:\/\/[^"]+)"/g)].map(m => m[1]);
-  for (const url of urls) {
-    assert.ok(url.startsWith('https://unclaimedlight.com') || url.startsWith('https://www.cloudflare.com'), `external URL in HTML: ${url}`);
-  }
-});
-
-test('full build: all internal links resolve', async () => {
-  await build();
-  const pages = ['index.html', 'crescent/index.html', 'crescent/1/index.html', 'about/index.html', '404.html'];
-  for (const p of pages) {
-    const html = readFileSync(path.join(distDir, p), 'utf8');
-    const hrefs = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map(m => m[1]);
-    for (const href of hrefs) {
-      if (href.startsWith('http') || href.startsWith('//') || href.startsWith('#') || href.startsWith('mailto:')) continue;
-      const rel = href.replace(/^\//, '').replace(/\/$/, '');
-      const candidates = rel === ''
-        ? [path.join(distDir, 'index.html')]
-        : [path.join(distDir, rel), path.join(distDir, rel, 'index.html')];
-      assert.ok(candidates.some(c => existsSync(c)), `${p}: broken link to "${href}"`);
-    }
-  }
-});
-
-test('full build: static assets exist (favicon, apple-touch-icon, manifest, robots, sitemap)', async () => {
-  await build();
-  for (const f of ['favicon.svg', 'apple-touch-icon.png', 'manifest.webmanifest', 'robots.txt', 'sitemap.xml', '_headers']) {
-    assert.ok(existsSync(path.join(distDir, f)), `missing: ${f}`);
-  }
 });

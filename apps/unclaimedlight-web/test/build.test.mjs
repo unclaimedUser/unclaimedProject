@@ -10,9 +10,12 @@ import sharp from 'sharp';
 import { checkSeriesSchema, checkPlates, checkNoExif } from '../src/checks.mjs';
 import {
   generatePlateImages, buildSeriesPage, buildIndexPage, buildPlatePage,
-  buildAboutPage, build404Page, buildHeaders, buildSitemap, buildCSS,
-  build, readAllSeries, contentDir, distDir, WIDTHS, KEY_NAV_SCRIPT, SPEC_RULES,
+  buildAboutPage, buildImpressumPage, buildDatenschutzPage, build404Page,
+  buildHeaders, buildSitemap, buildCSS,
+  build, readAllSeries, contentDir, distDir, brandDir, WIDTHS,
+  KEY_NAV_SCRIPT, SPEC_RULES,
   scriptHash, contentHash, plateStem,
+  sanitizeSvg, loadBrandSvgs,
 } from '../src/build.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,6 +64,16 @@ test('checkPlates passes on SVG plate files', async () => {
   } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
+test('checkPlates passes on PNG plate files', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
+  try {
+    mkdirSync(path.join(tmpDir, 'plates', 'x'), { recursive: true });
+    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.png'), 'data');
+    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.png', alt: 'alt' }] };
+    assert.doesNotThrow(() => checkPlates(series, tmpDir, 'x.json'));
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
 test('checkPlates throws on empty alt text', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
@@ -81,12 +94,12 @@ test('checkPlates throws on whitespace-only alt text', async () => {
   } finally { rmSync(tmpDir, { recursive: true }); }
 });
 
-test('checkPlates throws on unsupported extension', async () => {
+test('checkPlates throws on unsupported extension (gif)', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
   try {
     mkdirSync(path.join(tmpDir, 'plates', 'x'), { recursive: true });
-    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.png'), 'data');
-    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.png', alt: 'a' }] };
+    writeFileSync(path.join(tmpDir, 'plates', 'x', 'p.gif'), 'data');
+    const series = { slug: 'x', title: 'X', plates: [{ file: 'x/p.gif', alt: 'a' }] };
     assert.throws(() => checkPlates(series, tmpDir, 'x.json'), /must be/i);
   } finally { rmSync(tmpDir, { recursive: true }); }
 });
@@ -139,6 +152,167 @@ test('generatePlateImages produces AVIF + WebP at 3 widths with hashed names for
     assert.equal(srcWidth, 2400);
     assert.equal(srcHeight, 1600);
   } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+test('generatePlateImages produces AVIF + WebP from PNG source', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-'));
+  try {
+    const srcSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1600"><rect width="2400" height="1600" fill="#aaa"/></svg>');
+    const pngBuf = await sharp(srcSvg, { density: 72 }).resize(2400, 1600).png().toBuffer();
+    const srcPath = path.join(tmpDir, 'src', 'test.png');
+    mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(srcPath, pngBuf);
+    const hash = contentHash(srcPath);
+    const dest = path.join(tmpDir, 'out');
+    const { images } = await generatePlateImages(srcPath, dest, 'test', hash);
+    assert.equal(images.length, 3, 'should produce 3 widths');
+    for (const { avifPath, webpPath } of images) {
+      assert.ok(existsSync(avifPath), `missing avif: ${avifPath}`);
+      assert.ok(existsSync(webpPath), `missing webp: ${webpPath}`);
+    }
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+// --- sanitizeSvg ---
+
+test('sanitizeSvg strips script elements', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><text>ok</text></svg>';
+  const result = sanitizeSvg(svg);
+  assert.ok(!result.includes('<script'), 'script element not stripped');
+  assert.ok(!result.includes('alert(1)'), 'script content not stripped');
+  assert.ok(result.includes('<text>ok</text>'), 'safe content removed unexpectedly');
+});
+
+test('sanitizeSvg strips on* event attributes', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect onload="alert(1)" width="10" height="10"/></svg>';
+  const result = sanitizeSvg(svg);
+  assert.ok(!result.includes('onload'), 'onload attribute not stripped');
+  assert.ok(result.includes('<rect'), 'rect element removed unexpectedly');
+});
+
+test('sanitizeSvg strips external href', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><a href="https://evil.com">click</a></svg>';
+  const result = sanitizeSvg(svg);
+  assert.ok(!result.includes('https://evil.com'), 'external href not stripped');
+  assert.ok(result.includes('<a'), 'anchor element removed unexpectedly');
+});
+
+test('sanitizeSvg strips external xlink:href', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><use xlink:href="https://evil.com/sprite#icon"/></svg>';
+  const result = sanitizeSvg(svg);
+  assert.ok(!result.includes('https://evil.com'), 'external xlink:href not stripped');
+});
+
+test('sanitizeSvg strips javascript: href', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)">x</a></svg>';
+  const result = sanitizeSvg(svg);
+  assert.ok(!result.includes('javascript:'), 'javascript: href not stripped');
+});
+
+test('sanitizeSvg preserves internal references', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><defs><path id="p"/></defs><use href="#p"/></svg>';
+  const result = sanitizeSvg(svg);
+  assert.ok(result.includes('href="#p"'), 'internal href removed unexpectedly');
+});
+
+// --- loadBrandSvgs ---
+
+test('loadBrandSvgs fails with clear error when logo.svg is missing', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-brand-'));
+  try {
+    assert.throws(
+      () => loadBrandSvgs(tmpDir),
+      (err) => {
+        assert.ok(err.message.includes('logo.svg'), `error should mention logo.svg, got: ${err.message}`);
+        return true;
+      }
+    );
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+test('loadBrandSvgs inlines logo content and sanitizes script tags', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-brand-'));
+  try {
+    const maliciousSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><script>alert(1)</script><text>X</text></svg>';
+    writeFileSync(path.join(tmpDir, 'logo.svg'), maliciousSvg);
+    const { monogramHtml } = loadBrandSvgs(tmpDir);
+    assert.ok(monogramHtml.includes('<text>X</text>'), 'safe content removed unexpectedly');
+    assert.ok(!monogramHtml.includes('<script'), 'script not stripped from inlined logo');
+    assert.ok(!monogramHtml.includes('alert(1)'), 'script content not stripped');
+    assert.ok(monogramHtml.includes('class="monogram-svg"'), 'monogram-svg class not injected');
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+test('loadBrandSvgs sanitizes onload attribute', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-brand-'));
+  try {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect onload="bad()" width="96" height="96"/></svg>';
+    writeFileSync(path.join(tmpDir, 'logo.svg'), svg);
+    const { monogramHtml } = loadBrandSvgs(tmpDir);
+    assert.ok(!monogramHtml.includes('onload'), 'onload not stripped from inlined logo');
+    assert.ok(monogramHtml.includes('<rect'), 'rect element removed unexpectedly');
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+test('loadBrandSvgs falls back to logo.svg for favicon when favicon.svg is absent', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-brand-'));
+  try {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><text>L</text></svg>';
+    writeFileSync(path.join(tmpDir, 'logo.svg'), svg);
+    const { faviconSvg } = loadBrandSvgs(tmpDir);
+    assert.ok(faviconSvg.includes('<text>L</text>'), 'favicon should contain logo content when favicon.svg absent');
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+test('loadBrandSvgs uses favicon.svg when present', async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'ull-brand-'));
+  try {
+    writeFileSync(path.join(tmpDir, 'logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><text>L</text></svg>');
+    writeFileSync(path.join(tmpDir, 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><text>F</text></svg>');
+    const { faviconSvg } = loadBrandSvgs(tmpDir);
+    assert.ok(faviconSvg.includes('<text>F</text>'), 'favicon.svg should be used when present');
+    assert.ok(!faviconSvg.includes('<text>L</text>'), 'logo.svg should not be used for favicon when favicon.svg present');
+  } finally { rmSync(tmpDir, { recursive: true }); }
+});
+
+// --- site.json text fields reach the right pages ---
+
+const baseSite = { baseUrl: 'https://ex.com', title: 'T', statement: 'S', author: 'A', contact: 'c@e.com', locale: 'en' };
+
+test('aboutText paragraphs appear in about page', () => {
+  const site = { ...baseSite, aboutText: ['Bio paragraph one.', 'Bio paragraph two.'] };
+  const html = buildAboutPage({ site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES });
+  assert.ok(html.includes('Bio paragraph one.'), 'aboutText[0] missing from about page');
+  assert.ok(html.includes('Bio paragraph two.'), 'aboutText[1] missing from about page');
+});
+
+test('impressum paragraphs appear in impressum page', () => {
+  const site = { ...baseSite, impressum: ['Legal Name GmbH', 'Street 1, 12345 City', 'info@example.com'] };
+  const html = buildImpressumPage({ site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES });
+  assert.ok(html.includes('Legal Name GmbH'), 'impressum[0] missing from impressum page');
+  assert.ok(html.includes('Street 1, 12345 City'), 'impressum[1] missing from impressum page');
+  assert.ok(html.includes('info@example.com'), 'impressum[2] missing from impressum page');
+});
+
+test('privacy paragraphs appear in datenschutz page', () => {
+  const site = { ...baseSite, privacy: ['No cookies here.', 'Cloudflare processes connection data.'] };
+  const html = buildDatenschutzPage({ site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES });
+  assert.ok(html.includes('No cookies here.'), 'privacy[0] missing from datenschutz page');
+  assert.ok(html.includes('Cloudflare processes connection data.'), 'privacy[1] missing from datenschutz page');
+});
+
+test('footerNote appears in footer when set', () => {
+  const site = { ...baseSite, footerNote: 'All photos reserved.' };
+  const html = buildAboutPage({ site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES });
+  assert.ok(html.includes('All photos reserved.'), 'footerNote missing from page footer');
+});
+
+test('statement appears in index page', () => {
+  const site = { ...baseSite, statement: 'Light seen slowly.' };
+  const seriesList = [{ slug: 's', title: 'S', year: 2024, order: 1, plates: [{ file: 's/p.svg', alt: 'alt' }] }];
+  const plateInfoMap = { 's/p.svg': { hash: 'abc12345', images: WIDTHS.map(w => ({ width: w })), srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(0,0,0)' } };
+  const html = buildIndexPage({ seriesList, plateInfoMap, site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES, jsonLd: {} });
+  assert.ok(html.includes('Light seen slowly.'), 'statement missing from index page');
 });
 
 // --- buildSeriesPage ---
@@ -305,6 +479,35 @@ describe('full build', () => {
       if (ldMatch) {
         assert.doesNotThrow(() => JSON.parse(ldMatch[1]), `${p}: JSON-LD does not parse`);
       }
+    }
+  });
+
+  test('logo SVG from content/brand/logo.svg is inlined in index.html', () => {
+    const html = readFileSync(path.join(distDir, 'index.html'), 'utf8');
+    assert.ok(html.includes('class="monogram-svg"'), 'monogram-svg class missing from index.html');
+    assert.ok(html.includes('monogram-wrap'), 'monogram-wrap missing from index.html');
+  });
+
+  test('site.json text fields appear in the correct pages', () => {
+    const site = JSON.parse(readFileSync(path.join(contentDir, 'site.json'), 'utf8'));
+    const aboutHtml = readFileSync(path.join(distDir, 'about', 'index.html'), 'utf8');
+    const impressumHtml = readFileSync(path.join(distDir, 'impressum', 'index.html'), 'utf8');
+    const datenschutzHtml = readFileSync(path.join(distDir, 'datenschutz', 'index.html'), 'utf8');
+    const indexHtml = readFileSync(path.join(distDir, 'index.html'), 'utf8');
+
+    // statement appears in index
+    assert.ok(indexHtml.includes(site.statement), 'statement missing from index');
+    // aboutText paragraphs appear in about
+    for (const p of (site.aboutText ?? [])) {
+      assert.ok(aboutHtml.includes(p), `aboutText paragraph missing from about: ${p}`);
+    }
+    // impressum paragraphs appear in impressum
+    for (const p of (site.impressum ?? [])) {
+      assert.ok(impressumHtml.includes(p), `impressum paragraph missing from impressum: ${p}`);
+    }
+    // privacy paragraphs appear in datenschutz
+    for (const p of (site.privacy ?? [])) {
+      assert.ok(datenschutzHtml.includes(p), `privacy paragraph missing from datenschutz: ${p}`);
     }
   });
 

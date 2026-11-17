@@ -4,5 +4,19 @@
   "statement": "[PLACEHOLDER: short poetic statement about the work]",
   "author": "[PLACEHOLDER: photographer name]",
   "contact": "hi@unclaimedlight.com",
-  "locale": "en"
+  "locale": "en",
+  "aboutText": [
+    "[PLACEHOLDER: photographer biography]"
+  ],
+  "impressum": [
+    "[PLACEHOLDER: Name]",
+    "[PLACEHOLDER: Address]",
+    "[PLACEHOLDER: Contact]"
+  ],
+  "privacy": [
+    "Diese Website setzt keine Cookies. Es erfolgt kein Tracking und es werden keine Daten an Dritte übermittelt. Es werden keine externen Ressourcen (Schriftarten, Skripte, Bilder) von fremden Servern geladen.",
+    "Beim Aufruf der Website werden vom Hosting-Anbieter (Cloudflare) technisch notwendige Verbindungsdaten verarbeitet. Weitere Informationen: cloudflare.com/privacypolicy",
+    "[PLACEHOLDER: Owner: replace or extend with legally required information for your jurisdiction.]"
+  ],
+  "footerNote": ""
 }

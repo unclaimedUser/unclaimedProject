@@ -26,8 +26,8 @@ export function checkPlates(series, contentDir, seriesFile) {
       throw new Error(`${seriesFile}: plate "${plate.file}" has empty alt text`);
     }
     const ext = path.extname(plate.file).toLowerCase();
-    if (ext !== '.jpg' && ext !== '.jpeg' && ext !== '.svg') {
-      throw new Error(`${seriesFile}: plate "${plate.file}" must be .jpg, .jpeg, or .svg`);
+    if (!['.jpg', '.jpeg', '.png', '.svg'].includes(ext)) {
+      throw new Error(`${seriesFile}: plate "${plate.file}" must be .jpg, .jpeg, .png, or .svg`);
     }
   }
 }

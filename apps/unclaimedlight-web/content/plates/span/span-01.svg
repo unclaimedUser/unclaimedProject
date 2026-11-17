@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1600">
+  <defs>
+    <linearGradient id="gsky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#181920"/>
+      <stop offset="100%" stop-color="#3a3b3c"/>
+    </linearGradient>
+    <linearGradient id="ghaze" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8c8c8c" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#b4b0a8" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+  <rect width="2400" height="1600" fill="url(#gsky)"/>
+  <rect width="2400" height="1600" fill="url(#ghaze)"/>
+  <rect x="860" y="200" width="60" height="1200" fill="#2c2d2e" opacity="0.95"/>
+  <rect x="880" y="200" width="20" height="1200" fill="#3a3b3c" opacity="0.4"/>
+  <rect x="1480" y="200" width="60" height="1200" fill="#2c2d2e" opacity="0.95"/>
+  <rect x="1500" y="200" width="20" height="1200" fill="#3a3b3c" opacity="0.4"/>
+  <path d="M 890,220 Q 1200,480 1510,220" stroke="#484848" stroke-width="6" fill="none" opacity="0.9"/>
+  <line x1="960" y1="303" x2="960" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <line x1="1030" y1="354" x2="1030" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <line x1="1100" y1="393" x2="1100" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <line x1="1200" y1="415" x2="1200" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <line x1="1300" y1="393" x2="1300" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <line x1="1370" y1="354" x2="1370" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <line x1="1440" y1="303" x2="1440" y2="1300" stroke="#383838" stroke-width="2" opacity="0.5"/>
+  <rect x="860" y="1280" width="680" height="24" fill="#222324" opacity="0.8"/>
+</svg>

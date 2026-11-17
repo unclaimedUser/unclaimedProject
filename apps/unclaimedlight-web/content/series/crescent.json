@@ -1,0 +1,12 @@
+{
+  "slug": "crescent",
+  "title": "Crescent",
+  "text": "[PLACEHOLDER: series statement for Crescent]",
+  "year": 2024,
+  "order": 1,
+  "plates": [
+    { "file": "crescent/crescent-01.svg", "alt": "Placeholder: a thin crescent moon curves against a near-black sky above three pale bands of silver mist" },
+    { "file": "crescent/crescent-02.svg", "alt": "Placeholder: a broader crescent moon in a dark sky with dense layered mist filling the lower frame" },
+    { "file": "crescent/crescent-03.svg", "alt": "Placeholder: a crescent moon low near the horizon, luminous ground fog obscuring the lower third" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "slug": "still-water",
+  "title": "Still Water",
+  "text": "[PLACEHOLDER: series statement for Still Water]",
+  "year": 2024,
+  "order": 2,
+  "plates": [
+    { "file": "still-water/still-water-01.svg", "alt": "Placeholder: a swan-like curved form above its mirror reflection on still silver water under an overcast sky" },
+    { "file": "still-water/still-water-02.svg", "alt": "Placeholder: two swan-like forms and their reflections arranged symmetrically across a horizontal water plane" },
+    { "file": "still-water/still-water-03.svg", "alt": "Placeholder: abstract horizontal bands of grey with a single elongated pale elliptical form at the waterline" }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "unclaimed-unclaimedlight-web",
-  "compatibility_date": "2024-11-16",
+  "compatibility_date": "2026-11-01",
   // Static assets only — no Worker script, no bindings.
   "assets": {
     "directory": "./dist",

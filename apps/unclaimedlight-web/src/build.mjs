@@ -21,8 +21,9 @@ export const distDir = path.join(appDir, 'dist');
 
 export const WIDTHS = [800, 1600, 2400];
 
-// Contact email on the About page — owner confirms the real alias.
-const CONTACT_EMAIL = 'hello@sec.unclaimedlight.com';
+// Public contact address on the About page, confirmed by the owner.
+// Rendered as plain text (no mailto: link) to reduce scraping.
+const CONTACT_EMAIL = 'hi@unclaimedlight.com';
 
 function esc(str) {
   return String(str)

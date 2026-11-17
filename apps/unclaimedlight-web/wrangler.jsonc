@@ -1,6 +1,10 @@
 {
   "name": "unclaimed-unclaimedlight-web",
   "compatibility_date": "2026-11-01",
+  // workers_dev: enabled during development/preview; switch to false once the
+  // custom domain (unclaimedlight.com) is live and the *.workers.dev route is retired.
+  "workers_dev": true,
+  "preview_urls": true,
   // Static assets only — no Worker script, no bindings.
   "assets": {
     "directory": "./dist",

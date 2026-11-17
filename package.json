@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "node --test \"tools/**/*.test.mjs\" && npm run test:apps",
+    "test:apps": "npm --prefix apps/unclaimedlight-web ci --no-audit --no-fund && npm --prefix apps/unclaimedlight-web test",
     "check:kb": "node tools/check-kb.mjs"
   }
 }

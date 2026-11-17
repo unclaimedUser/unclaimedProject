@@ -2,6 +2,7 @@
   "slug": "placeholder",
   "title": "Placeholder Series",
   "text": "A placeholder series used to verify the build pipeline before real photographs are added.",
+  "draft": true,
   "plates": [
     {
       "file": "placeholder/plate-01.jpg",

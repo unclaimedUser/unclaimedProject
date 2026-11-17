@@ -84,7 +84,7 @@ footer a:hover{opacity:.6}
 }
 @layer components{
 .site-header{padding:5rem 2rem 4rem;text-align:center}
-.monogram-wrap{display:inline-block;margin-bottom:1.5rem}
+.monogram-wrap{display:block;margin:0 0 1.5rem;font-size:inherit}
 .monogram-svg{width:72px;height:72px;fill:light-dark(#1A1B1C,#ECE9E3)}
 .statement{margin-top:1.5rem;font-size:clamp(1rem,.9rem + .4vw,1.2rem);font-style:italic;text-wrap:balance;max-width:36em;margin-left:auto;margin-right:auto}
 .site-nav{padding:1.25rem 2rem;font-size:.8125rem;letter-spacing:.06em;text-transform:uppercase}
@@ -240,10 +240,12 @@ export async function generateOgImage(srcBuffer, outPath) {
 export async function readAllSeries() {
   const seriesDir = path.join(contentDir, 'series');
   const files = (await readdir(seriesDir)).filter(f => f.endsWith('.json'));
-  const all = files.map(f => {
-    const filePath = path.join(seriesDir, f);
-    return { data: JSON.parse(readFileSync(filePath, 'utf8')), filePath };
-  });
+  const all = files
+    .map(f => {
+      const filePath = path.join(seriesDir, f);
+      return { data: JSON.parse(readFileSync(filePath, 'utf8')), filePath };
+    })
+    .filter(({ data }) => !data.draft);
   all.sort((a, b) => {
     const oa = a.data.order ?? 999;
     const ob = b.data.order ?? 999;
@@ -282,7 +284,7 @@ ${head}
 <body>
 <a class="skip-link" href="#main-content">Skip to content</a>
 <header class="site-header">
-<div class="monogram-wrap"><a href="/" aria-label="${esc(site.title)} — home">${buildMonogramSvg()}</a></div>
+<h1 class="monogram-wrap"><a href="/" aria-label="${esc(site.title)} — home">${buildMonogramSvg()}</a></h1>
 <p class="statement">${esc(site.statement)}</p>
 </header>
 <main id="main-content">

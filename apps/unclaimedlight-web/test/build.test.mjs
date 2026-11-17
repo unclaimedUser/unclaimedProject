@@ -167,13 +167,14 @@ test('buildSeriesPage has lang, title, one h1, picture markup, width/height, fet
 
 // --- buildIndexPage ---
 
-test('buildIndexPage has lang, title, og:image, JSON-LD', () => {
+test('buildIndexPage has lang, title, one h1, og:image, JSON-LD', () => {
   const site = { baseUrl: 'https://ex.com', title: 'T', statement: 'S', author: 'A', contact: 'c@e.com', locale: 'en' };
   const seriesList = [{ slug: 's', title: 'S', year: 2024, order: 1, plates: [{ file: 's/p.svg', alt: 'alt' }] }];
   const plateInfoMap = { 's/p.svg': { hash: 'abc12345', images: WIDTHS.map(w => ({ width: w })), srcWidth: 2400, srcHeight: 1600, dominantColor: 'rgb(0,0,0)' } };
   const html = buildIndexPage({ seriesList, plateInfoMap, site, ogImageUrl: 'https://ex.com/og/site.jpg', specRules: SPEC_RULES, jsonLd: { '@context': 'https://schema.org' } });
   assert.ok(/<html[^>]+lang=/.test(html), 'missing lang');
   assert.ok(/<title>[^<]+<\/title>/.test(html), 'missing title');
+  assert.equal((html.match(/<h1[\s>]/g) || []).length, 1, 'index must have exactly 1 h1');
   assert.ok(html.includes('og:image'), 'missing og:image');
   assert.ok(html.includes('application/ld+json'), 'missing JSON-LD');
   assert.ok(html.includes('rel="canonical"'), 'missing canonical');
@@ -290,7 +291,7 @@ test('full build: every page has lang, title, at most one h1, canonical, og:imag
     assert.ok(/<html[^>]+lang=/.test(html), `${p}: missing lang`);
     assert.ok(/<title>[^<]+<\/title>/.test(html), `${p}: missing title`);
     const h1s = (html.match(/<h1[\s>]/g) || []).length;
-    assert.ok(h1s <= 1, `${p}: expected at most 1 h1, found ${h1s}`);
+    assert.equal(h1s, 1, `${p}: expected exactly 1 h1, found ${h1s}`);
     assert.ok(html.includes('rel="canonical"'), `${p}: missing canonical`);
     const ogMatch = html.match(/property="og:image" content="([^"]+)"/);
     if (ogMatch) {

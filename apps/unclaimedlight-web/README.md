@@ -18,6 +18,15 @@ Static photography site. `npm run build` generates WebP variants and HTML into `
 2. Upload source JPEGs to `content/plates/<slug>/` — **export without metadata** (no GPS, no EXIF). The build fails if any JPEG contains EXIF.
 3. Open a PR. The build runs in CI; the preview link is the release-candidate check.
 
+## Deployment (Cloudflare Workers Builds)
+
+- Root directory: `/apps/unclaimedlight-web`; build command `npm run build`.
+- `main` → `npx wrangler deploy` (merging = production deploy).
+- Preview branches → `env -u WRANGLER_CI_MATCH_TAG npx wrangler versions upload`.
+  The `env -u` prefix works around a Workers Builds bug where preview builds fail with
+  "The name in your wrangler.jsonc file … must match the name of your Worker" even though the
+  name is correct (cloudflare/workers-sdk#15682). Drop the prefix once Cloudflare fixes it.
+
 ## Development
 
 ```sh

@@ -1,14 +1,14 @@
 /**
  * Static site builder for unclaimedLight v0.2.
  *
- * Input: content/site.json + content/series/*.json + content/plates/**
+ * Input: content/site.json + content/brand/ + content/series/*.json + content/plates/**
  * Output: dist/ — HTML pages with inlined CSS, hashed AVIF/WebP images,
  *         OG images, sitemap, robots.txt, favicon, manifest, _headers.
  *
  * Exported functions are used directly by tests.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -19,6 +19,7 @@ import { checkSeriesSchema, checkPlates, checkNoExif } from './checks.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const appDir = path.join(__dirname, '..');
 export const contentDir = path.join(appDir, 'content');
+export const brandDir = path.join(contentDir, 'brand');
 export const distDir = path.join(appDir, 'dist');
 
 export const WIDTHS = [800, 1600, 2400];
@@ -39,7 +40,7 @@ function escJson(obj) {
 }
 
 export function plateStem(file) {
-  return file.replace(/\.(jpe?g|svg)$/i, '');
+  return file.replace(/\.(jpe?g|png|svg)$/i, '');
 }
 
 export function contentHash(filePath) {
@@ -82,11 +83,15 @@ picture{display:block}
 main{flex:1}
 footer{padding:1.5rem 2rem;font-size:.8125rem;letter-spacing:.06em;text-transform:uppercase;display:flex;gap:1.5rem;flex-wrap:wrap}
 footer a:hover{opacity:.6}
+.footer-note{opacity:.5}
 }
 @layer components{
 .site-header{padding:5rem 2rem 4rem;text-align:center}
 .monogram-wrap{display:block;margin:0 0 1.5rem;font-size:inherit}
 .monogram-svg{width:72px;height:72px;fill:light-dark(#1A1B1C,#ECE9E3)}
+.logo-light-wrap,.logo-dark-wrap{display:contents}
+.logo-dark-wrap{display:none}
+@media(prefers-color-scheme:dark){.logo-light-wrap{display:none}.logo-dark-wrap{display:contents}}
 .statement{margin-top:1.5rem;font-size:clamp(1rem,.9rem + .4vw,1.2rem);font-style:italic;text-wrap:balance;max-width:36em;margin-left:auto;margin-right:auto}
 .site-nav{padding:1.25rem 2rem;font-size:.8125rem;letter-spacing:.06em;text-transform:uppercase}
 .featured-plate{margin:2rem 0}
@@ -124,12 +129,57 @@ footer a:hover{opacity:.6}
 }`;
 }
 
+// Strip <script> blocks, on* event attributes, and external href/xlink:href from SVG text.
+export function sanitizeSvg(svgText) {
+  return svgText
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/\s+on[a-z][a-z0-9]*(?:=(?:"[^"]*"|'[^']*'|\S+))?/gi, '')
+    .replace(/\s+(?:xlink:)?href=(?:"(?:https?:|javascript:)[^"]*"|'(?:https?:|javascript:)[^']*')/gi, '');
+}
+
+// Module-level brand state, populated by loadBrandSvgs() before build.
+let _monogramHtml = '';
+let _faviconSvg = '';
+
+/**
+ * Read and sanitize brand SVGs from the given directory.
+ * Throws with a clear message if logo.svg is missing.
+ * Returns { monogramHtml, faviconSvg, hasDarkLogo }.
+ */
+export function loadBrandSvgs(dir) {
+  const logoPath = path.join(dir, 'logo.svg');
+  if (!existsSync(logoPath)) {
+    throw new Error(
+      `Missing required brand file: ${logoPath}\n` +
+      `Create content/brand/logo.svg to continue.`
+    );
+  }
+
+  const rawLogo = sanitizeSvg(readFileSync(logoPath, 'utf8'));
+  const monoSvg = rawLogo.replace(/^(\s*<svg\b)/, '$1 class="monogram-svg" aria-hidden="true" focusable="false"');
+
+  const darkLogoPath = path.join(dir, 'logo-dark.svg');
+  const hasDarkLogo = existsSync(darkLogoPath);
+  if (hasDarkLogo) {
+    const rawDark = sanitizeSvg(readFileSync(darkLogoPath, 'utf8'));
+    const darkSvg = rawDark.replace(/^(\s*<svg\b)/, '$1 class="monogram-svg" aria-hidden="true" focusable="false"');
+    _monogramHtml = `<span class="logo-light-wrap">${monoSvg}</span><span class="logo-dark-wrap">${darkSvg}</span>`;
+  } else {
+    _monogramHtml = monoSvg;
+  }
+
+  const faviconPath = path.join(dir, 'favicon.svg');
+  _faviconSvg = sanitizeSvg(readFileSync(existsSync(faviconPath) ? faviconPath : logoPath, 'utf8'));
+
+  return { monogramHtml: _monogramHtml, faviconSvg: _faviconSvg, hasDarkLogo };
+}
+
 export function buildFaviconSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><style>:root{--fg:#1A1B1C;--bg:#ECE9E3}@media(prefers-color-scheme:dark){:root{--fg:#ECE9E3;--bg:#1A1B1C}}</style><rect width="48" height="48" rx="6" fill="var(--bg)"/><path d="M6,38 Q14,32 24,34 Q34,36 42,31" stroke="var(--fg)" stroke-width="1.5" fill="none" stroke-linecap="round"/><path d="M6,42 Q16,37 24,39 Q32,40 42,36" stroke="var(--fg)" stroke-width="1.2" fill="none" stroke-linecap="round" opacity=".6"/><text x="6" y="30" font-family="ui-serif,Georgia,serif" font-size="20" font-weight="300" fill="var(--fg)" letter-spacing="-1">dL</text></svg>`;
+  return _faviconSvg;
 }
 
 export function buildMonogramSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" class="monogram-svg" aria-hidden="true" focusable="false"><path d="M8,76 Q20,64 48,68 Q68,71 88,62" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M8,84 Q24,74 48,78 Q64,81 88,72" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" opacity=".5"/><text x="10" y="62" font-family="ui-serif,Georgia,serif" font-size="44" font-weight="300" fill="currentColor" letter-spacing="-2">dL</text></svg>`;
+  return _monogramHtml;
 }
 
 function buildHead({ title, description, canonical, ogImage, site, extraMeta = '' }) {
@@ -163,12 +213,13 @@ function speculationRulesTag(specRules) {
   return `<script type="speculationrules">${specRules}</script>`;
 }
 
-function buildFooter() {
+function buildFooter(site) {
+  const note = site?.footerNote ? `<span class="footer-note">${esc(site.footerNote)}</span>` : '';
   return `<footer>
 <a href="/about/">About</a>
 <a href="/impressum/">Impressum</a>
 <a href="/datenschutz/">Datenschutz</a>
-<span>© ${new Date().getFullYear()}</span>
+<span>© ${new Date().getFullYear()}</span>${note ? `\n${note}` : ''}
 </footer>`;
 }
 
@@ -296,7 +347,7 @@ ${seriesItems}
 </ul>
 </div>
 </main>
-${buildFooter()}
+${buildFooter(site)}
 <script type="application/ld+json">${escJson(jsonLd)}</script>
 ${speculationRulesTag(specRules)}
 </body>
@@ -335,7 +386,7 @@ ${head}
 ${plates}
 </div>
 </main>
-${buildFooter()}
+${buildFooter(site)}
 <script type="application/ld+json">${escJson(jsonLd)}</script>
 ${speculationRulesTag(specRules)}
 </body>
@@ -389,7 +440,7 @@ ${head}
 <div class="plate-frame">${picture}</div>
 </main>
 ${caption}
-${buildFooter()}
+${buildFooter(site)}
 <script type="application/ld+json">${escJson(jsonLd)}</script>
 ${speculationRulesTag(specRules)}
 <script>${KEY_NAV_SCRIPT}</script>
@@ -412,6 +463,8 @@ export function buildAboutPage({ site, ogImageUrl, specRules }) {
     ogImage: ogImageUrl,
     site,
   });
+  const paragraphs = (site.aboutText ?? ['[PLACEHOLDER: photographer biography]'])
+    .map(p => `<p>${esc(p)}</p>`).join('\n');
   return `<!doctype html>
 <html lang="${esc(site.locale)}">
 ${head}
@@ -422,12 +475,11 @@ ${head}
 <div class="page-body">
 <h1>About</h1>
 <p>${esc(site.author)}</p>
-<p>${esc(site.statement)}</p>
+${paragraphs}
 <p>Contact: ${esc(site.contact)}</p>
-<p class="placeholder-notice">Owner: replace name, statement, and biography text.</p>
 </div>
 </main>
-${buildFooter()}
+${buildFooter(site)}
 <script type="application/ld+json">${escJson(jsonLd)}</script>
 ${speculationRulesTag(specRules)}
 </body>
@@ -442,6 +494,8 @@ export function buildImpressumPage({ site, ogImageUrl, specRules }) {
     ogImage: ogImageUrl,
     site,
   });
+  const paragraphs = (site.impressum ?? ['[PLACEHOLDER: Name]', '[PLACEHOLDER: Address]', '[PLACEHOLDER: Contact]'])
+    .map(p => `<p>${esc(p)}</p>`).join('\n');
   return `<!doctype html>
 <html lang="${esc(site.locale)}">
 ${head}
@@ -451,13 +505,10 @@ ${head}
 <main id="main-content">
 <div class="page-body">
 <h1>Impressum</h1>
-<p class="placeholder-notice">Owner: add your legal name, address, and contact details as required by §5 TMG (Germany) or applicable law.</p>
-<p>[PLACEHOLDER: Name]</p>
-<p>[PLACEHOLDER: Address]</p>
-<p>[PLACEHOLDER: Contact]</p>
+${paragraphs}
 </div>
 </main>
-${buildFooter()}
+${buildFooter(site)}
 ${speculationRulesTag(specRules)}
 </body>
 </html>`;
@@ -471,6 +522,10 @@ export function buildDatenschutzPage({ site, ogImageUrl, specRules }) {
     ogImage: ogImageUrl,
     site,
   });
+  const paragraphs = (site.privacy ?? [
+    'Diese Website setzt keine Cookies. Es erfolgt kein Tracking und es werden keine Daten an Dritte übermittelt. Es werden keine externen Ressourcen (Schriftarten, Skripte, Bilder) von fremden Servern geladen.',
+    'Beim Aufruf der Website werden vom Hosting-Anbieter (Cloudflare) technisch notwendige Verbindungsdaten verarbeitet. Weitere Informationen: cloudflare.com/privacypolicy',
+  ]).map(p => `<p>${esc(p)}</p>`).join('\n');
   return `<!doctype html>
 <html lang="${esc(site.locale)}">
 ${head}
@@ -480,12 +535,10 @@ ${head}
 <main id="main-content">
 <div class="page-body">
 <h1>Datenschutz</h1>
-<p>Diese Website setzt keine Cookies. Es erfolgt kein Tracking und es werden keine Daten an Dritte übermittelt. Es werden keine externen Ressourcen (Schriftarten, Skripte, Bilder) von fremden Servern geladen.</p>
-<p>Beim Aufruf der Website werden vom Hosting-Anbieter (Cloudflare) technisch notwendige Verbindungsdaten verarbeitet. Weitere Informationen: <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare Privacy Policy</a>.</p>
-<p class="placeholder-notice">Owner: replace or extend with legally required information for your jurisdiction.</p>
+${paragraphs}
 </div>
 </main>
-${buildFooter()}
+${buildFooter(site)}
 ${speculationRulesTag(specRules)}
 </body>
 </html>`;
@@ -511,7 +564,7 @@ ${head}
 <p><a href="/">Return home</a></p>
 </div>
 </main>
-${buildFooter()}
+${buildFooter(site)}
 ${speculationRulesTag(specRules)}
 </body>
 </html>`;
@@ -574,6 +627,10 @@ export function buildManifest(site) {
 
 export async function build() {
   const site = JSON.parse(readFileSync(path.join(contentDir, 'site.json'), 'utf8'));
+
+  // Load brand assets — fails fast if logo.svg is missing.
+  loadBrandSvgs(brandDir);
+
   const entries = await readAllSeries();
 
   for (const { data: series, filePath } of entries) {
@@ -617,8 +674,24 @@ export async function build() {
     await generateOgImage(firstBuffer, path.join(distDir, 'og', `${series.slug}.jpg`));
   }
 
+  // Use og-default.{jpg,jpeg,png,svg} if provided, otherwise fall back to first plate.
+  const ogDefaultExts = ['.jpg', '.jpeg', '.png', '.svg'];
+  let customOgFile = null;
+  for (const ext of ogDefaultExts) {
+    const p = path.join(brandDir, `og-default${ext}`);
+    if (existsSync(p)) { customOgFile = p; break; }
+  }
   const firstSeries = entries[0]?.data;
-  if (firstSeries) {
+  if (customOgFile) {
+    const ext = path.extname(customOgFile).toLowerCase();
+    let buf;
+    if (ext === '.svg') {
+      buf = await sharp(readFileSync(customOgFile), { density: 150 }).resize(2400, null).png().toBuffer();
+    } else {
+      buf = readFileSync(customOgFile);
+    }
+    await generateOgImage(buf, path.join(distDir, 'og', 'site.jpg'));
+  } else if (firstSeries) {
     await generateOgImage(
       firstPlateBuffers[firstSeries.slug],
       path.join(distDir, 'og', 'site.jpg')

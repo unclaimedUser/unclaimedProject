@@ -2,6 +2,25 @@
 
 Static photography site. `npm run build` generates WebP variants and HTML into `dist/`. Cloudflare Workers Static Assets serves `dist/`.
 
+## Changing brand and text
+
+No code changes needed. Edit the files below, commit to `main` (or open a PR for a preview first), and the build picks everything up automatically.
+
+| File | What it controls | How to replace from a phone |
+|---|---|---|
+| `content/brand/logo.svg` | Monogram shown in every page header. Uses `currentColor`; dark mode works automatically. | GitHub web UI → navigate to file → pencil icon, or **Add file → Upload files** (keep filename `logo.svg`). |
+| `content/brand/favicon.svg` | Browser tab icon. Falls back to `logo.svg` if absent. | Same as above with filename `favicon.svg`. |
+| `content/brand/logo-dark.svg` | Optional alternate logo for dark mode. When present, light and dark variants are switched via CSS. | Upload as `logo-dark.svg`. Delete the file to revert to single-logo mode. |
+| `content/brand/og-default.jpg` (or `.png`, `.svg`) | Fallback Open Graph share image (1200×630). Falls back to the first plate of the first series. | Upload as `og-default.jpg`. |
+| `content/site.json` → `statement` | Italic tagline on the home page. | Edit the JSON file in the GitHub web UI. |
+| `content/site.json` → `author` | Photographer name shown on the About page and in structured data. | Edit `site.json`. |
+| `content/site.json` → `aboutText` | Array of paragraphs for the About page biography. | Edit `site.json`. Add or remove strings in the array. |
+| `content/site.json` → `impressum` | Array of paragraphs for the Impressum page (legal notice). | Edit `site.json`. |
+| `content/site.json` → `privacy` | Array of paragraphs for the Datenschutz page (privacy policy). | Edit `site.json`. |
+| `content/site.json` → `footerNote` | Optional note shown in every page footer. Set to `""` to hide. | Edit `site.json`. |
+
+See `content/brand/README.md` for details on SVG requirements and the sanitization that runs on inlined logos.
+
 ## Adding a series
 
 1. Create `content/series/<slug>.json`:

@@ -203,3 +203,32 @@ test('build produces 3 WebP widths per plate and HTML with srcset and alt', asyn
   assert.ok(indexHtml.includes('srcset='), 'index page missing srcset');
   assert.ok(indexHtml.includes('alt='), 'index page missing alt');
 });
+
+test('every generated page has lang, title, and exactly one h1', async () => {
+  await build();
+  const pages = ['index.html', 'placeholder/index.html', 'about/index.html', '404.html'];
+  for (const p of pages) {
+    const html = readFileSync(path.join(distDir, p), 'utf8');
+    assert.ok(/<html[^>]+lang=/.test(html), `${p}: missing lang attribute`);
+    assert.ok(/<title>[^<]+<\/title>/.test(html), `${p}: missing <title>`);
+    const h1Count = (html.match(/<h1[\s>]/g) || []).length;
+    assert.equal(h1Count, 1, `${p}: expected exactly one <h1>, found ${h1Count}`);
+  }
+});
+
+test('generated pages link only to existing pages', async () => {
+  await build();
+  const pages = ['index.html', 'placeholder/index.html', 'about/index.html', '404.html'];
+  for (const p of pages) {
+    const html = readFileSync(path.join(distDir, p), 'utf8');
+    const hrefs = [...html.matchAll(/<a\s[^>]*href="([^"]+)"/g)].map(m => m[1]);
+    for (const href of hrefs) {
+      if (href.startsWith('http') || href.startsWith('//') || href.startsWith('#') || href.startsWith('mailto:')) continue;
+      const rel = href.replace(/^\//, '').replace(/\/$/, '');
+      const candidates = rel === ''
+        ? [path.join(distDir, 'index.html')]
+        : [path.join(distDir, rel), path.join(distDir, rel, 'index.html')];
+      assert.ok(candidates.some(c => existsSync(c)), `${p}: broken link to "${href}"`);
+    }
+  }
+});
